@@ -543,7 +543,9 @@ do_STARTTLS(Socket, Options) ->
 	smtp_socket:send(Socket, "STARTTLS\r\n"),
 	case read_possible_multiline_reply(Socket) of
 		{ok, <<"220", _Rest/binary>>} ->
-			case catch smtp_socket:to_ssl_client(Socket, proplists:get_value(tls_options, Options, []), 5000) of
+			case catch smtp_socket:to_ssl_client(Socket, [binary | proplists:get_value(tls_options, Options, [])], 5000) of
+			%SEB https://github.com/gen-smtp/gen_smtp/issues/250#issuecomment-791444408
+			%case catch smtp_socket:to_ssl_client(Socket, proplists:get_value(tls_options, Options, []), 5000) of
 				{ok, NewSocket} ->
 					%NewSocket;
 					{ok, Extensions} = try_EHLO(NewSocket, Options),
