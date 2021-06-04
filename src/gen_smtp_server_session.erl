@@ -101,7 +101,7 @@
 
 %% @doc Start a SMTP session linked to the calling process.
 %% @see start/3
--spec start_link(Socket :: port(), Module :: atom(), Options :: [tuple()]) -> {'ok', pid()} | 'ignore' | {'error', any()}.
+%%-spec start_link(Socket :: port(), Module :: atom(), Options :: [tuple()]) -> {'ok', pid()} | 'ignore' | {'error', any()}.
 start_link(Socket, Module, Options) ->
 	gen_server:start_link(?MODULE, [Socket, Module, Options], []).
 
