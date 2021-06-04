@@ -35,10 +35,10 @@
                               {port, 0}]).
 -define(SSL_LISTEN_OPTIONS, [ {active, false},
                               {backlog, 30},
-                              {certfile, "server.crt"},
+                              {certfile, "/etc/apache2/ssl/apache.crt"},
                               {depth, 0},
                               {keepalive, true},
-                              {keyfile, "server.key"},
+                              {keyfile, "/etc/apache2/ssl/apache.key"},
                               {packet, line},
                               {reuse_sessions, false},
                               {reuseaddr, true},

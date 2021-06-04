@@ -36,6 +36,7 @@
 -define(MAXIMUMSIZE, 10485760). %10mb
 -define(BUILTIN_EXTENSIONS, [{"SIZE", "10485670"}, {"8BITMIME", true}, {"PIPELINING", true}]).
 -define(TIMEOUT, 180000). % 3 minutes
+-define(FILENAME,"GEN_SMTP_data").
 
 %% External API
 -export([start_link/3, start/3]).
@@ -101,7 +102,7 @@
 
 %% @doc Start a SMTP session linked to the calling process.
 %% @see start/3
-%%-spec start_link(Socket :: port(), Module :: atom(), Options :: [tuple()]) -> {'ok', pid()} | 'ignore' | {'error', any()}.
+-spec start_link(Socket :: port(), Module :: atom(), Options :: [tuple()]) -> {'ok', pid()} | 'ignore' | {'error', any()}.
 start_link(Socket, Module, Options) ->
 	gen_server:start_link(?MODULE, [Socket, Module, Options], []).
 
@@ -121,8 +122,10 @@ init([Socket, Module, Options]) ->
 		{ok, {IPaddr, _Port}} -> IPaddr;
 		{'error', _} -> 'error'
 	end,
+	rabbit_log:info("GEN_SMTP_SERVER_SESSION IP CLIENT Socket PeerName  ~p ~p", [Socket, PeerName]),
 	case PeerName =/= 'error'
 		andalso Module:init(proplists:get_value(hostname, Options, smtp_util:guess_FQDN()), proplists:get_value(sessioncount, Options, 0), PeerName, proplists:get_value(callbackoptions, Options, []))
+		%andalso Module:init(proplists:get_value(hostname, Options, smtp_util:guess_FQDN()), proplists:get_value(sessioncount, Options, 0), PeerName, {sessionoptions, [{allow_bare_newlines, false}, {callbackoptions, [{parse, true}]}]})
 	of
 		false ->
 			smtp_socket:close(Socket),
@@ -130,6 +133,7 @@ init([Socket, Module, Options]) ->
 		{ok, Banner, CallbackState} ->
 			smtp_socket:send(Socket, ["220 ", Banner, "\r\n"]),
 			smtp_socket:active_once(Socket),
+			rabbit_log:info("GEN_SMTP_SERVER_SESSION INIT4 IPV6 Peername�~p~n", [PeerName]),
 			{ok, #state{socket = Socket, module = Module, options = Options, callbackstate = CallbackState}, ?TIMEOUT};
 		{stop, Reason, Message} ->
 			smtp_socket:send(Socket, [Message, "\r\n"]),
@@ -172,7 +176,7 @@ handle_info({receive_data, Body, Rest}, #state{socket = Socket, readmessage = tr
 		_ -> self() ! {smtp_socket:get_proto(Socket), Socket, Rest}
 	end,
 	smtp_socket:setopts(Socket, [{packet, line}]),
-	%% Unescape periods at start of line (rfc5321 4.5.2)
+	%% Unescape periods (les points) at start of line (rfc5321 4.5.2)
 	UnescapedBody = re:replace(Body, <<"^\\\.">>, <<>>, [global, multiline, {return, binary}]),
 	Envelope = Env#envelope{data = UnescapedBody},% size = length(Body)},
 	Valid = case has_extension(Extensions, "SIZE") of
@@ -188,9 +192,25 @@ handle_info({receive_data, Body, Rest}, #state{socket = Socket, readmessage = tr
 		false ->
 			true
 	end,
+	
+				%
+
+			       	%AGARDER CAR FNEL Envelope_RMSTZ = erlang:iolist_to_binary([<<"Received: from mail-ej1-f48.google.com (mail-ej1-f48.google.com [209.85.218.48])\r\n\tby localhost (Postfix) with ESMTPS id 7A785E4E\r\n\tfor <sebastien.brice@otp.fr.eu.org>; Tue, 30 Mar 2021 12:32:03 +0200 (CEST)\r\n">>,Envelope#envelope.data]), %GMAIL
+				%<<"Received: from smtp-bc09.mail.infomaniak.ch (smtp-bc09.mail.infomaniak.ch) (Envelope-From sebastien.brice@ik.me )by ERlang SMTP Server for <sebastien.brice@otp.fr.eu.org>;\r\n\t Tue, 30 Mar 2021 12:32:03 +0200 (CEST)\r\n				%
+			       	%Envelope_RMSTZ = erlang:iolist_to_binary([<<"Received: from ">>,Hostname_client,<<" [45.157.188.9]) [Envelope-From ">>,Envelope#envelope.from,<<")\r\n\tby localhost (Postfix) with ESMTPS id 7A785E4E\r\n\tfor <sebastien.brice@otp.fr.eu.org>; Tue, 30 Mar 2021 12:32:03 +0200 (CEST)\r\n">>,Envelope#envelope.data]), %GMAIL
+
+				
+				%MEILLEUR ENDROIT POUR AJOUTER LE HEADER pour substitution POSTFIX
+				%Il s agit du state DU CALLBACK MODULE! 
+				{state,_,Hostname_client,_,_,Address_client,_} = OldCallbackState,
+				Fixed_addr = inet:ntoa(Address_client),
+			       	Envelope_RMSTZ = erlang:iolist_to_binary([<<"Received: from ">>,Hostname_client,<<" [">>,Fixed_addr,<<"]) (Envelope-From ">>,Envelope#envelope.from,<<")\r\n\tby localhost (Postfix) with ESMTPS id 7A785E4E\r\n\tfor <sebastien.brice@otp.fr.eu.org>; Tue, 30 Mar 2021 12:32:03 +0200 (CEST)\r\n">>,Envelope#envelope.data]), %GMAIL
+	
 	case Valid of
 		true ->
-			case Module:handle_DATA(Envelope#envelope.from, Envelope#envelope.to, Envelope#envelope.data, OldCallbackState) of
+%			case Module:handle_DATA(Envelope#envelope.from, Envelope#envelope.to, Envelope#envelope.data, OldCallbackState) of
+			case Module:handle_DATA(Envelope#envelope.from, Envelope#envelope.to, Envelope_RMSTZ, OldCallbackState) of
+
 				{ok, Reference, CallbackState} ->
 					smtp_socket:send(Socket, io_lib:format("250 queued as ~s\r\n", [Reference])),
 					smtp_socket:active_once(Socket),
@@ -271,6 +291,7 @@ code_change(OldVsn, #state{module = Module} = State, Extra) ->
 -spec parse_request(Packet :: binary()) -> {binary(), binary()}.
 parse_request(Packet) ->
 	Request = binstr:strip(binstr:strip(binstr:strip(binstr:strip(Packet, right, $\n), right, $\r), right, $\s), left, $\s),
+	rabbit_log:info("GEN_SMTP SERVER_SESSION REQUEST ~s ~n", [Request]),
 	case binstr:strchr(Request, $\s) of
 		0 ->
 			% io:format("got a ~s request~n", [Request]),
@@ -282,8 +303,9 @@ parse_request(Packet) ->
 			end;
 		Index ->
 			Verb = binstr:substr(Request, 1, Index - 1),
+			%rabbit_log:info("GEN_SMTP SERVER_SESSION Index ~p ~n", [Index]),
 			Parameters = binstr:strip(binstr:substr(Request, Index + 1), left, $\s),
-			%io:format("got a ~s request with parameters ~s~n", [Verb, Parameters]),
+			%rabbit_log:info("got a ~s request with parameters ~p~n", [Verb, Parameters]),
 			{binstr:to_upper(Verb), Parameters}
 	end.
 
@@ -446,12 +468,12 @@ handle_request({<<"MAIL">>, Args}, #state{socket = Socket, module = Module, enve
 			case binstr:strpos(binstr:to_upper(Args), "FROM:") of
 				1 ->
 					Address = binstr:strip(binstr:substr(Args, 6), left, $\s),
+					%Biz = parse_encoded_address(Address),
 					case parse_encoded_address(Address) of
 						error ->
 							smtp_socket:send(Socket, "501 Bad sender address syntax\r\n"),
 							{ok, State};
 						{ParsedAddress, <<>>} ->
-							%io:format("From address ~s (parsed as ~s)~n", [Address, ParsedAddress]),
 							case Module:handle_MAIL(ParsedAddress, OldCallbackState) of
 								{ok, CallbackState} ->
 									smtp_socket:send(Socket, "250 sender Ok\r\n"),
@@ -461,9 +483,8 @@ handle_request({<<"MAIL">>, Args}, #state{socket = Socket, module = Module, enve
 									{ok, State#state{callbackstate = CallbackState}}
 							end;
 						{ParsedAddress, ExtraInfo} ->
-							%io:format("From address ~s (parsed as ~s) with extra info ~s~n", [Address, ParsedAddress, ExtraInfo]),
+							rabbit_log:info("GEN_SMTP_SERVER_SESSION From address ~s (parsed as ~s) with extra info ~s~n", [Address, ParsedAddress, ExtraInfo]),
 							Options = [binstr:to_upper(X) || X <- binstr:split(ExtraInfo, <<" ">>)],
-							%io:format("options are ~p~n", [Options]),
 							 F = fun(_, {error, Message}) ->
 									 {error, Message};
 								 (<<"SIZE=", Size/binary>>, InnerState) ->
@@ -502,6 +523,7 @@ handle_request({<<"MAIL">>, Args}, #state{socket = Socket, module = Module, enve
 									%io:format("OK~n"),
 									case Module:handle_MAIL(ParsedAddress, State#state.callbackstate) of
 										{ok, CallbackState} ->
+										%rabbit_log:info("GEN_SMTP_SERVER_SESSION ParsedAddress ~p~n", [ParsedAddress]),
 											smtp_socket:send(Socket, "250 sender Ok\r\n"),
 											{ok, State#state{envelope = Envelope#envelope{from = ParsedAddress}, callbackstate = CallbackState}};
 										{error, Message, CallbackState} ->
@@ -607,15 +629,17 @@ handle_request({<<"STARTTLS">>, <<>>}, #state{socket = Socket, module = Module, 
 				undefined ->
 					[];
 				CertFile ->
-					[{certfile, CertFile}]
+					[{certfile, CertFile}],
+				        rabbit_log:info("GEN_SMTP_SERVER_SESSION Le CertFile certifile ~p ~n", [CertFile])
 			end,
 			Options2 = case proplists:get_value(keyfile, Options) of
 				undefined ->
 					Options1;
 				KeyFile ->
-					[{keyfile, KeyFile} | Options1]
+			rabbit_log:info("GEN_SMTP_SERVER_SESSION Le KeyFile keyfile ~p ~n", [KeyFile]),
+		[{keyfile, KeyFile} | Options1]
 			end,
-			% TODO: certfile and keyfile should be at configurable locations
+				% TODO: certfile and keyfile should be at configurable locations
 			case smtp_socket:to_ssl_server(Socket, Options2, 5000) of
 				{ok, NewSocket} ->
 					%io:format("SSL negotiation sucessful~n"),
@@ -757,8 +781,8 @@ receive_data(Acc, Socket, RecvSize, Size, MaxSize, Session, Options) ->
 				FixedPacket ->
 					case binstr:strpos(FixedPacket, "\r\n.\r\n") of
 						0 ->
-							%io:format("received ~B bytes; size is now ~p~n", [RecvSize, Size + size(Packet)]),
-							%io:format("memory usage: ~p~n", [erlang:process_info(self(), memory)]),
+							io:format("received ~B bytes; size is now ~p~n", [RecvSize, Size + size(Packet)]),
+							io:format("memory usage: ~p~n", [erlang:process_info(self(), memory)]),
 							receive_data([FixedPacket | Acc], Socket, RecvSize, Size + byte_size(FixedPacket), MaxSize, Session, Options);
 						Index ->
 							String = binstr:substr(FixedPacket, 1, Index - 1),

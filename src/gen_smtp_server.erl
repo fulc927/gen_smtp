@@ -40,6 +40,8 @@
 
 -record(listener, {
 		hostname :: list(),
+		%certfile = "/etc/apache2/ssl/apache.crt":: any(),
+		%keyfile = "/etc/apache2/ssl/apache.key":: any(),
 		port :: port(),
 		sessionoptions = [] :: [tuple()],
 		socket :: port() | any(),
@@ -47,6 +49,7 @@
 		}).
 -type(listener() :: #listener{}).
 
+%un champ intéressant est le champ listeners, la déclaration au dessus (#listener{}) signifie que le record listeners peut posséder 0 ou plusieurs enregistrement listener, utile quand on veut écouter sur des ports différents 2525 et 1465 ainsi que tcp et tls. cette notation signifie également qu'un record peut être utilisé en tant que type en écrivant: #listener.socket ou Listener#listener.listenoptions)
 -record(state, {
 		listeners :: [listener()],  % Listening sockets (tcp or ssl)
 		module :: atom(),
@@ -123,10 +126,12 @@ init([Module, Configurations]) ->
 	process_flag(trap_exit, true),
 	DefaultConfig = [{domain, smtp_util:guess_FQDN()}, {address, {0,0,0,0}},
 		{port, ?PORT}, {protocol, tcp}, {family, inet}],
+	%rabbit_log:info("GEN_SMTP_SERVER LE INIT1 ~p ~p", [Module,Configurations]),
     case Configurations of
         [FirstConfig|_] when is_list(FirstConfig) ->
             error_logger:info_msg("~p starting at ~p~n", [?MODULE, node()]),
             Listeners = [extract_listener(Config, DefaultConfig) || Config <- Configurations],
+	    %rabbit_log:info("GEN_SMTP_SERVER LE LISTENERS ~p", [Listeners]),
             case lists:dropwhile(fun(R) -> element(1, R) =/= error end, Listeners) of
                 [] ->
                     {ok, #state{listeners = Listeners, module = Module}};
@@ -139,13 +144,20 @@ init([Module, Configurations]) ->
 
 extract_listener(Config, DefaultConfig) ->
     NewConfig = lists:ukeymerge(1, lists:sort(Config), lists:sort(DefaultConfig)),
+    %rabbit_log:info("GEN_SMTP_SERVER LE CONFIG  ~p", [Config]),
+    %rabbit_log:info("GEN_SMTP_SERVER LE NEWCONFIG  ~p", [NewConfig]),
     Port = proplists:get_value(port, NewConfig),
     IP = proplists:get_value(address, NewConfig),
     Family = proplists:get_value(family, NewConfig),
     Hostname = proplists:get_value(domain, NewConfig),
     Protocol = proplists:get_value(protocol, NewConfig),
-    SessionOptions = proplists:get_value(sessionoptions, NewConfig, []),
+    %rabbit_log:info("GEN_SMTP_SERVER LE PROTOCOL ~p", [Protocol]),
+    %SessionOptions = proplists:get_value(sessionoptions, NewConfig,[[{certfile = "/etc/apache2/ssl/apache.crt", keyfile = "/etc/apache2/ssl/apache.key"}]]),
+    %SessionOptions = proplists:get_value(sessionoptions, NewConfig,[]),
+    SessionOptions = [{sessionoptions, [{allow_bare_newlines,fix}, {callbackoptions, [{parse,true}]}]}],
+    %rabbit_log:info("GEN_SMTP_SERVER LE SESSIONOPTIONS ~p", [SessionOptions]),
     ListenOptions = [binary, {ip, IP}, Family],
+    %rabbit_log:info("GEN_SMTP_SERVER LE LISTENOPTIONS ~p", [ListenOptions]),
     case smtp_socket:listen(Protocol, Port, ListenOptions) of
         {ok, ListenSocket} -> %%Create first accepting process
             error_logger:info_msg("~p listening on ~p:~p via ~p~n", [?MODULE, IP, Port, Protocol]),
@@ -186,7 +198,7 @@ handle_info({inet_async, ListenPort,_, {ok, ClientAcceptSocket}},
 				end || L <- Listeners]),
 		{ok, ClientSocket} = smtp_socket:handle_inet_async(Listener#listener.socket, ClientAcceptSocket, Listener#listener.listenoptions),
 		%% New client connected
-		% io:format("new client connection.~n", []),
+		rabbit_log:info("new client connection.~p ~n", [ClientSocket]),
 		Sessions = case gen_smtp_server_session:start(ClientSocket, Module, [{hostname, Listener#listener.hostname}, {sessioncount, length(CurSessions) + 1} | Listener#listener.sessionoptions]) of
 			{ok, Pid} ->
 				link(Pid),
