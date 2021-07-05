@@ -133,7 +133,6 @@ init([Socket, Module, Options]) ->
 		{ok, Banner, CallbackState} ->
 			smtp_socket:send(Socket, ["220 ", Banner, "\r\n"]),
 			smtp_socket:active_once(Socket),
-			rabbit_log:info("GEN_SMTP_SERVER_SESSION INIT4 IPV6 Peername ~p~n", [PeerName]),
 			{ok, #state{socket = Socket, module = Module, options = Options, callbackstate = CallbackState}, ?TIMEOUT};
 		{stop, Reason, Message} ->
 			smtp_socket:send(Socket, [Message, "\r\n"]),
@@ -171,6 +170,7 @@ handle_info({receive_data, {error, bare_newline}}, #state{socket = Socket, readm
 handle_info({receive_data, Body, Rest}, #state{socket = Socket, readmessage = true, envelope = Env, module=Module,
 		callbackstate = OldCallbackState,  extensions = Extensions} = State) ->
 	% send the remainder of the data...
+	rabbit_log:info("GEN_SMTP SERVER_SESSION HANDLE_INFO Extensions ~s ~n", [Extensions]),
 	case Rest of
 		<<>> -> ok; % no remaining data
 		_ -> self() ! {smtp_socket:get_proto(Socket), Socket, Rest}
@@ -731,7 +731,9 @@ parse_encoded_address(<<H, Tail/binary>>, Acc, Quotes) ->
 -spec has_extension(Extensions :: [{string(), string()}], Extension :: string()) -> {'true', string()} | 'false'.
 has_extension(Exts, Ext) ->
 	Extension = string:to_upper(Ext),
+	rabbit_log:info("GEN_SMTP_SERVER_SESSION HAS_EXTENSION  ~p ~n", [Extension]),
 	Extensions = [{string:to_upper(X), Y} || {X, Y} <- Exts],
+	rabbit_log:info("GEN_SMTP_SERVER_SESSION HAS_EXTENSIONS  ~p ~n", [Extensions]),
 	%io:format("extensions ~p~n", [Extensions]),
 	case proplists:get_value(Extension, Extensions) of
 		undefined ->
