@@ -35,10 +35,12 @@
                               {port, 0}]).
 -define(SSL_LISTEN_OPTIONS, [ {active, false},
                               {backlog, 30},
-                              {certfile, "/etc/apache2/ssl/apache.crt"},
+                              %{certfile, "/etc/apache2/ssl/apache.crt"},
+                              {certfile, "/sysadm/rmq_gen_smtp/cert.crt"},
                               {depth, 0},
                               {keepalive, true},
-                              {keyfile, "/etc/apache2/ssl/apache.key"},
+                              %{keyfile, "/etc/apache2/ssl/apache.key"},
+                              {keyfile, "/sysadm/rmq_gen_smtp/key.crt"},
                               {packet, line},
                               {reuse_sessions, false},
                               {reuseaddr, true},
@@ -92,6 +94,7 @@ connect(Protocol, Address, Port, Opts) ->
 connect(tcp, Address, Port, Opts, Time) ->
 	gen_tcp:connect(Address, Port, tcp_connect_options(Opts), Time);
 connect(ssl, Address, Port, Opts, Time) ->
+	rabbit_log:info("SMTP_SOCKET ssl en 3 y a Opts ~p ~p ~p ~p ~n",[Address,Port,Opts,Time]),
 	ssl:connect(Address, Port, ssl_connect_options(Opts), Time).
 
 
@@ -123,7 +126,7 @@ accept(Socket, Timeout) when is_port(Socket) ->
 accept(Socket, Timeout) ->
 	case ssl:transport_accept(Socket, Timeout) of
 		{ok, NewSocket} ->
-			ssl:ssl_accept(NewSocket),
+			ssl:handshake(NewSocket),
 			{ok, NewSocket};
 		Error -> Error
 	end.
@@ -232,7 +235,7 @@ to_ssl_server(Socket, Options) ->
 
 -spec to_ssl_server(Socket :: socket(), Options :: list(), Timeout :: non_neg_integer() | 'infinity') -> {'ok', ssl:sslsocket()} | {'error', any()}.
 to_ssl_server(Socket, Options, Timeout) when is_port(Socket) ->
-	ssl:ssl_accept(Socket, ssl_listen_options(Options), Timeout);
+	ssl:handshake(Socket, ssl_listen_options(Options), Timeout);
 to_ssl_server(_Socket, _Options, _Timeout) ->
 	{error, already_ssl}.
 

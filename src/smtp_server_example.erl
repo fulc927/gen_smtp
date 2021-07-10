@@ -74,17 +74,20 @@ handle_HELO(Hostname, State) ->
 handle_EHLO(<<"invalid">>, _Extensions, State) ->
 	% contrived example
 	{error, "554 invalid hostname", State};
-handle_EHLO(Hostname, Extensions, State) ->
-	io:format("EHLO from ~s~n", [Hostname]),
-	% You can advertise additional extensions, or remove some defaults
-	MyExtensions = case proplists:get_value(auth, State#state.options, false) of
-		true ->
-			% auth is enabled, so advertise it
-			Extensions ++ [{"AUTH", "PLAIN LOGIN CRAM-MD5"}, {"STARTTLS", true}];
-		false ->
-			Extensions
-	end,
-	{ok, MyExtensions, State}.
+handle_EHLO(_Hostname, Extensions, State) ->
+	           WithTlsExts = Extensions ++ [{"STARTTLS", true}],
+	               {ok, WithTlsExts, State}.
+%handle_EHLO(Hostname, Extensions, State) ->
+%	io:format("EHLO from ~s~n", [Hostname]),
+%	% You can advertise additional extensions, or remove some defaults
+%	MyExtensions = case proplists:get_value(auth, State#state.options, false) of
+%		true ->
+%			% auth is enabled, so advertise it
+%			Extensions ++ [{"AUTH", "PLAIN LOGIN CRAM-MD5"}, {"STARTTLS", true}];
+%		false ->
+%			Extensions
+%	end,
+%	{ok, MyExtensions, State}.
 
 %% @doc Handle the MAIL FROM verb. The From argument is the email address specified by the
 %% MAIL FROM command. Extensions to the MAIL verb are handled by the `handle_MAIL_extension'

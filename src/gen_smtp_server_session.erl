@@ -117,7 +117,7 @@ start(Socket, Module, Options) ->
 
 %% @private
 -spec init(Args :: list()) -> {'ok', #state{}, ?TIMEOUT} | {'stop', any()} | 'ignore'.
-init([Socket, Module, Options]) ->
+init([Socket, Module, Options   ]) ->
 	PeerName = case smtp_socket:peername(Socket) of
 		{ok, {IPaddr, _Port}} -> IPaddr;
 		{'error', _} -> 'error'
@@ -125,7 +125,6 @@ init([Socket, Module, Options]) ->
 	rabbit_log:info("GEN_SMTP_SERVER_SESSION IP CLIENT Socket PeerName  ~p ~p", [Socket, PeerName]),
 	case PeerName =/= 'error'
 		andalso Module:init(proplists:get_value(hostname, Options, smtp_util:guess_FQDN()), proplists:get_value(sessioncount, Options, 0), PeerName, proplists:get_value(callbackoptions, Options, []))
-		%andalso Module:init(proplists:get_value(hostname, Options, smtp_util:guess_FQDN()), proplists:get_value(sessioncount, Options, 0), PeerName, {sessionoptions, [{allow_bare_newlines, false}, {callbackoptions, [{parse, true}]}]})
 	of
 		false ->
 			smtp_socket:close(Socket),
@@ -357,6 +356,9 @@ handle_request({<<"EHLO">>, Hostname}, #state{socket = Socket, options = Options
 					end,
 					{_, _, Response} = lists:foldl(F, {1, length(Extensions2), [["250-", proplists:get_value(hostname, Options, smtp_util:guess_FQDN()), "\r\n"]]}, Extensions2),
 					%?debugFmt("Respponse ~p~n", [lists:reverse(Response)]),
+					rabbit_log:info("GEN_SERVER_SMTP_SESSION Response ~p ~n",[Response]),
+					rabbit_log:info("GEN_SERVER_SMTP_SESSION Extensions ~p ~n",[Extensions]),
+					rabbit_log:info("GEN_SERVER_SMTP_SESSION Extensions2 ~p ~n",[Extensions2]),
 					smtp_socket:send(Socket, lists:reverse(Response)),
 					{ok, State#state{extensions = Extensions2, envelope = #envelope{}, callbackstate = CallbackState}}
 			end;
